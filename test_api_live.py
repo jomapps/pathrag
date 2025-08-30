@@ -55,34 +55,28 @@ def main():
     print("PathRAG API Live System Test")
     print("=" * 60)
     
-    # Test configuration
-    base_url = "http://localhost:8000"
-    domain_url = "http://movie.ft.tc:8000"
+    # Test configuration - only test local service
+    base_url = "http://localhost:5000"
     
     tests_passed = 0
     total_tests = 0
     
-    # Test 1: Health Check (localhost)
+    # Test 1: Health Check
     total_tests += 1
-    if test_api_endpoint(f"{base_url}/health", description="Health Check (localhost)"):
+    if test_api_endpoint(f"{base_url}/health", description="Health Check"):
         tests_passed += 1
     
-    # Test 2: Health Check (domain)
-    total_tests += 1
-    if test_api_endpoint(f"{domain_url}/health", description="Health Check (domain)"):
-        tests_passed += 1
-    
-    # Test 3: Root endpoint
+    # Test 2: Root endpoint
     total_tests += 1
     if test_api_endpoint(f"{base_url}/", description="Root API Information"):
         tests_passed += 1
     
-    # Test 4: Documentation endpoint
+    # Test 3: Documentation endpoint
     total_tests += 1
     if test_api_endpoint(f"{base_url}/docs", description="API Documentation"):
         tests_passed += 1
     
-    # Test 5: Query endpoint
+    # Test 4: Query endpoint
     total_tests += 1
     query_data = {
         "query": "What is PathRAG?",
@@ -91,7 +85,7 @@ def main():
     if test_api_endpoint(f"{base_url}/query", method="POST", data=query_data, description="Query Endpoint"):
         tests_passed += 1
     
-    # Test 6: Insert endpoint
+    # Test 5: Insert endpoint
     total_tests += 1
     insert_data = {
         "documents": [
@@ -102,7 +96,7 @@ def main():
     if test_api_endpoint(f"{base_url}/insert", method="POST", data=insert_data, description="Insert Endpoint"):
         tests_passed += 1
     
-    # Test 7: Query after insert
+    # Test 6: Query after insert
     total_tests += 1
     query_data2 = {
         "query": "Tell me about PathRAG system",
@@ -129,7 +123,6 @@ def main():
         
         print(f"\n🌐 Your PathRAG API is live at:")
         print(f"   • Local: {base_url}")
-        print(f"   • Domain: {domain_url}")
         
         return True
     else:
