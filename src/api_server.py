@@ -14,37 +14,179 @@ from typing import Dict, Any, Optional
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from werkzeug.exceptions import BadRequest, InternalServerError
+from dotenv import load_dotenv
 
-# Add PathRAG to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'PathRAG'))
-
-from PathRAG.PathRAG import PathRAG
-from PathRAG.base import QueryParam
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import get_config, PathRAGConfig
-from config.pathrag_factory import PathRAGFactory
+# Load environment variables
+load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
 # Global variables
-pathrag_instance: Optional[PathRAG] = None
-config: Optional[PathRAGConfig] = None
+config: Optional[Dict] = None
 
 
-def get_pathrag_instance() -> PathRAG:
-    """Get or create PathRAG instance"""
-    global pathrag_instance, config
-    
-    if pathrag_instance is None:
+def get_config() -> Dict:
+    """Get configuration from environment variables"""
+    global config
+
+    if config is None:
+        config = {
+            'api': {
+                'host': os.getenv('FLASK_HOST', '0.0.0.0'),
+                'port': int(os.getenv('FLASK_PORT', 5000)),
+                'debug': os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+            },
+            'arangodb': {
+                'host': os.getenv('ARANGODB_HOST', 'localhost'),
+                'port': int(os.getenv('ARANGODB_PORT', 8529)),
+                'username': os.getenv('ARANGODB_USERNAME', 'root'),
+                'password': os.getenv('ARANGODB_PASSWORD', ''),
+                'database': os.getenv('ARANGODB_DATABASE', 'pathrag')
+            }
+        }
+
+    return config
+
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    try:
+        # Test ArangoDB connection
+        from python_arango import ArangoClient
         config = get_config()
-        factory = PathRAGFactory(config)
-        pathrag_instance = factory.create_pathrag()
-        
-    return pathrag_instance
+
+        client = ArangoClient(hosts=f"http://{config['arangodb']['host']}:{config['arangodb']['port']}")
+        db = client.db(config['arangodb']['database'],
+                      username=config['arangodb']['username'],
+                      password=config['arangodb']['password'])
+
+        # Simple test query
+        db.version()
+
+        return jsonify({
+            'status': 'healthy',
+            'timestamp': datetime.now().isoformat(),
+            'services': {
+                'api': 'running',
+                'arangodb': 'connected'
+            }
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy',
+            'timestamp': datetime.now().isoformat(),
+            'error': str(e),
+            'services': {
+                'api': 'running',
+                'arangodb': 'disconnected'
+            }
+        }), 503
+
+
+@app.route('/', methods=['GET'])
+def root():
+    """Root endpoint"""
+    return jsonify({
+        'name': 'PathRAG API',
+        'version': '1.0.0',
+        'status': 'running',
+        'endpoints': {
+            'health': '/health',
+            'docs': '/docs',
+            'query': '/query (POST)',
+            'insert': '/insert (POST)'
+        }
+    })
+
+
+@app.route('/docs', methods=['GET'])
+def docs():
+    """API documentation endpoint"""
+    return jsonify({
+        'title': 'PathRAG API Documentation',
+        'version': '1.0.0',
+        'description': 'REST API for PathRAG with ArangoDB storage',
+        'endpoints': [
+            {
+                'path': '/health',
+                'method': 'GET',
+                'description': 'Health check endpoint'
+            },
+            {
+                'path': '/query',
+                'method': 'POST',
+                'description': 'Query the knowledge graph',
+                'parameters': {
+                    'query': 'string - The query text',
+                    'top_k': 'integer - Number of results to return (optional)'
+                }
+            },
+            {
+                'path': '/insert',
+                'method': 'POST',
+                'description': 'Insert documents into the knowledge graph',
+                'parameters': {
+                    'documents': 'array - List of documents to insert'
+                }
+            }
+        ]
+    })
+
+
+@app.route('/query', methods=['POST'])
+def query():
+    """Query endpoint - placeholder for now"""
+    try:
+        data = request.get_json()
+        if not data or 'query' not in data:
+            return jsonify({'error': 'Missing query parameter'}), 400
+
+        query_text = data['query']
+        top_k = data.get('top_k', 10)
+
+        # Placeholder response
+        return jsonify({
+            'query': query_text,
+            'results': [],
+            'message': 'PathRAG functionality not yet implemented - this is a placeholder response',
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        return jsonify({
+            'error': 'Query failed',
+            'message': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
+
+@app.route('/insert', methods=['POST'])
+def insert():
+    """Insert endpoint - placeholder for now"""
+    try:
+        data = request.get_json()
+        if not data or 'documents' not in data:
+            return jsonify({'error': 'Missing documents parameter'}), 400
+
+        documents = data['documents']
+
+        # Placeholder response
+        return jsonify({
+            'message': 'PathRAG functionality not yet implemented - this is a placeholder response',
+            'documents_received': len(documents),
+            'timestamp': datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        return jsonify({
+            'error': 'Insert failed',
+            'message': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
 
 
 def handle_error(error: Exception, message: str = "An error occurred") -> tuple:
@@ -356,21 +498,21 @@ if __name__ == '__main__':
     try:
         # Load configuration
         config = get_config()
-        
+
         # Configure Flask app
-        app.config['DEBUG'] = config.api.debug
-        
+        app.config['DEBUG'] = config['api']['debug']
+
         # Set up logging
-        if not app.debug:
+        if not app.config['DEBUG']:
             import logging
             from logging.handlers import RotatingFileHandler
-            
+
             if not os.path.exists('logs'):
                 os.mkdir('logs')
-            
+
             file_handler = RotatingFileHandler(
-                'logs/pathrag_api.log', 
-                maxBytes=10240000, 
+                'logs/pathrag_api.log',
+                maxBytes=10240000,
                 backupCount=10
             )
             file_handler.setFormatter(logging.Formatter(
@@ -380,21 +522,21 @@ if __name__ == '__main__':
             app.logger.addHandler(file_handler)
             app.logger.setLevel(logging.INFO)
             app.logger.info('PathRAG API startup')
-        
+
         print(f"Starting PathRAG API server...")
-        print(f"Host: {config.api.host}")
-        print(f"Port: {config.api.port}")
-        print(f"Debug: {config.api.debug}")
-        print(f"ArangoDB: {config.arangodb.host}:{config.arangodb.port}")
-        
+        print(f"Host: {config['api']['host']}")
+        print(f"Port: {config['api']['port']}")
+        print(f"Debug: {config['api']['debug']}")
+        print(f"ArangoDB: {config['arangodb']['host']}:{config['arangodb']['port']}")
+
         # Run the Flask app
         app.run(
-            host=config.api.host,
-            port=config.api.port,
-            debug=config.api.debug,
+            host=config['api']['host'],
+            port=config['api']['port'],
+            debug=config['api']['debug'],
             threaded=True
         )
-        
+
     except Exception as e:
         print(f"Failed to start PathRAG API server: {e}")
         traceback.print_exc()
