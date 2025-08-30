@@ -64,9 +64,12 @@ class EnvironmentVerifier:
             
             # Check remote status
             subprocess.run(['git', 'fetch'], capture_output=True, check=True)
-            result = subprocess.run(['git', 'status', '-uno'], 
+            result = subprocess.run(['git', 'status', '-uno'],
                                   capture_output=True, text=True, check=True)
-            is_up_to_date = 'up to date' in result.stdout.lower()
+            # Check if we're up to date (either "up to date" or "nothing to commit")
+            status_output = result.stdout.lower()
+            is_up_to_date = ('up to date' in status_output or
+                           'nothing to commit' in status_output)
             
             details = {
                 'current_branch': current_branch,
