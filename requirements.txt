@@ -1,0 +1,57 @@
+# PathRAG with ArangoDB - Core Dependencies
+# Production-ready requirements for PathRAG deployment
+
+# Core PathRAG dependencies
+accelerate>=0.20.0
+aioboto3>=11.0.0
+aiohttp>=3.8.0
+graspologic
+hnswlib>=0.7.0
+nano-vectordb>=0.0.4
+networkx
+openai>=1.0.0
+tiktoken>=0.5.0
+torch>=2.0.0
+transformers>=4.30.0
+xxhash>=3.0.0
+tenacity>=8.0.0
+
+# ArangoDB dependencies
+python-arango>=7.5.0
+aioarango>=1.0.0
+
+# Flask API server dependencies
+Flask>=2.3.0
+Flask-CORS>=4.0.0
+Werkzeug>=2.3.0
+
+# Configuration and environment
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+
+# Logging and monitoring
+structlog>=23.0.0
+psutil>=5.9.0
+
+# Development and testing (optional)
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.0.0
+
+# Optional database packages (commented out by default)
+# neo4j>=5.0.0
+# oracledb>=1.0.0
+# psycopg[binary,pool]>=3.0.0
+# pymilvus>=2.0.0
+# pymongo>=4.0.0
+# pymysql>=1.0.0
+# sqlalchemy>=2.0.0
+
+# Optional visualization
+# pyvis>=0.3.0
+
+# Optional LLM packages
+# ollama>=0.1.0
+# lmdeploy[all]>=0.2.0
