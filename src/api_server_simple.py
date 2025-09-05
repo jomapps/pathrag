@@ -140,6 +140,17 @@ def handle_error(error: Exception, message: str = "An error occurred") -> tuple:
 def health_check():
     """Health check endpoint"""
     try:
+        health_status = {
+            'status': 'healthy',
+            'timestamp': datetime.now().isoformat(),
+            'services': {
+                'api': 'running',
+                'arangodb': 'unknown',
+                'storage': 'unknown',
+                'query_engine': 'unknown'
+            }
+        }
+
         # Test ArangoDB connection
         try:
             from arango import ArangoClient
@@ -152,21 +163,52 @@ def health_check():
 
             # Simple test query
             db.version()
-            arangodb_status = 'connected'
+            health_status['services']['arangodb'] = 'connected'
 
         except ImportError:
-            arangodb_status = 'python-arango not installed'
+            health_status['services']['arangodb'] = 'python-arango not installed'
+            health_status['status'] = 'degraded'
         except Exception as e:
-            arangodb_status = f'disconnected: {str(e)}'
+            health_status['services']['arangodb'] = f'disconnected: {str(e)}'
+            health_status['status'] = 'degraded'
 
-        return jsonify({
-            'status': 'healthy',
-            'timestamp': datetime.now().isoformat(),
-            'services': {
-                'api': 'running',
-                'arangodb': arangodb_status
-            }
-        }), 200
+        # Test storage initialization
+        try:
+            storage_instance = get_storage()
+            if storage_instance:
+                health_status['services']['storage'] = 'initialized'
+
+                # Test query functionality
+                try:
+                    # Perform a simple test query
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        test_results = loop.run_until_complete(
+                            search_nodes(storage_instance, "health check test", 1)
+                        )
+                        health_status['services']['query_engine'] = 'functional'
+                    finally:
+                        loop.close()
+
+                except Exception as e:
+                    health_status['services']['query_engine'] = f'error: {str(e)}'
+                    health_status['status'] = 'degraded'
+            else:
+                health_status['services']['storage'] = 'not initialized'
+                health_status['services']['query_engine'] = 'unavailable'
+                health_status['status'] = 'degraded'
+
+        except Exception as e:
+            health_status['services']['storage'] = f'error: {str(e)}'
+            health_status['services']['query_engine'] = 'unavailable'
+            health_status['status'] = 'degraded'
+
+        # Determine overall status
+        if health_status['status'] == 'degraded':
+            return jsonify(health_status), 503
+        else:
+            return jsonify(health_status), 200
 
     except Exception as e:
         return jsonify({
@@ -175,7 +217,9 @@ def health_check():
             'error': str(e),
             'services': {
                 'api': 'running',
-                'arangodb': 'error'
+                'arangodb': 'error',
+                'storage': 'error',
+                'query_engine': 'error'
             }
         }), 503
 
@@ -189,7 +233,9 @@ def root():
         'status': 'running',
         'endpoints': {
             'health': '/health',
+            'health/query': '/health/query',
             'docs': '/docs',
+            'stats': '/stats',
             'query': '/query (POST)',
             'insert': '/insert (POST)'
         }
@@ -210,6 +256,16 @@ def docs():
                 'description': 'Health check endpoint'
             },
             {
+                'path': '/health/query',
+                'method': 'GET',
+                'description': 'Query-specific health check endpoint'
+            },
+            {
+                'path': '/stats',
+                'method': 'GET',
+                'description': 'Get PathRAG storage statistics'
+            },
+            {
                 'path': '/query',
                 'method': 'POST',
                 'description': 'Query the knowledge graph',
@@ -228,6 +284,133 @@ def docs():
             }
         ]
     })
+
+
+@app.route('/health/query', methods=['GET'])
+def query_health_check():
+    """Dedicated query health check endpoint"""
+    try:
+        health_status = {
+            'status': 'healthy',
+            'timestamp': datetime.now().isoformat(),
+            'query_tests': {
+                'storage_available': False,
+                'search_functional': False,
+                'answer_generation': False,
+                'end_to_end': False
+            },
+            'performance': {
+                'search_time_ms': 0,
+                'total_time_ms': 0
+            }
+        }
+
+        start_time = datetime.now()
+
+        # Test 1: Storage availability
+        storage_instance = get_storage()
+        if not storage_instance:
+            health_status['status'] = 'unhealthy'
+            health_status['error'] = 'Storage not available'
+            return jsonify(health_status), 503
+
+        health_status['query_tests']['storage_available'] = True
+
+        # Test 2: Search functionality
+        try:
+            search_start = datetime.now()
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                # Perform test search
+                test_results = loop.run_until_complete(
+                    search_nodes(storage_instance, "health check test query", 3)
+                )
+                search_end = datetime.now()
+                health_status['performance']['search_time_ms'] = int((search_end - search_start).total_seconds() * 1000)
+                health_status['query_tests']['search_functional'] = True
+
+                # Test 3: Answer generation
+                try:
+                    test_answer = generate_answer("health check test query", test_results)
+                    health_status['query_tests']['answer_generation'] = True
+
+                    # Test 4: End-to-end functionality
+                    health_status['query_tests']['end_to_end'] = True
+                    health_status['test_results'] = {
+                        'query': 'health check test query',
+                        'results_count': len(test_results),
+                        'answer_length': len(test_answer) if test_answer else 0
+                    }
+
+                except Exception as e:
+                    health_status['query_tests']['answer_generation'] = False
+                    health_status['answer_generation_error'] = str(e)
+                    health_status['status'] = 'degraded'
+
+            finally:
+                loop.close()
+
+        except Exception as e:
+            health_status['query_tests']['search_functional'] = False
+            health_status['search_error'] = str(e)
+            health_status['status'] = 'unhealthy'
+
+        end_time = datetime.now()
+        health_status['performance']['total_time_ms'] = int((end_time - start_time).total_seconds() * 1000)
+
+        # Determine response status
+        if health_status['status'] == 'unhealthy':
+            return jsonify(health_status), 503
+        elif health_status['status'] == 'degraded':
+            return jsonify(health_status), 200  # Still functional but with issues
+        else:
+            return jsonify(health_status), 200
+
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy',
+            'timestamp': datetime.now().isoformat(),
+            'error': str(e),
+            'query_tests': {
+                'storage_available': False,
+                'search_functional': False,
+                'answer_generation': False,
+                'end_to_end': False
+            }
+        }), 503
+
+
+@app.route('/stats', methods=['GET'])
+def stats():
+    """Get PathRAG storage statistics"""
+    try:
+        storage_instance = get_storage()
+        if not storage_instance:
+            return jsonify({
+                'error': 'Storage not available',
+                'message': 'ArangoDB storage is not initialized',
+                'timestamp': datetime.now().isoformat()
+            }), 500
+
+        # Get statistics from storage
+        stats_data = storage_instance.get_stats()
+
+        # Add additional API-level statistics
+        stats_data.update({
+            'api_version': '1.0.0',
+            'timestamp': datetime.now().isoformat(),
+            'storage_type': 'ArangoDB'
+        })
+
+        return jsonify(stats_data), 200
+
+    except Exception as e:
+        return jsonify({
+            'error': 'Failed to get statistics',
+            'message': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
 
 
 @app.route('/query', methods=['POST'])
